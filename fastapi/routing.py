@@ -271,16 +271,19 @@ class _DefaultLifespan:
         return self
 
 
-# Cache for endpoint context to avoid re-extracting on every request
-_endpoint_context_cache: dict[int, EndpointContext] = {}
+# Cache for endpoint context to avoid re-extracting on every request.
+# Keyed by `id(func)` but storing the function itself, so a recycled address can
+# never be mistaken for a live endpoint (https://github.com/fastapi/fastapi/issues/16390).
+_endpoint_context_cache: dict[int, tuple[Any, EndpointContext]] = {}
 
 
 def _extract_endpoint_context(func: Any) -> EndpointContext:
     """Extract endpoint context with caching to avoid repeated file I/O."""
     func_id = id(func)
 
-    if func_id in _endpoint_context_cache:
-        return _endpoint_context_cache[func_id]
+    cached = _endpoint_context_cache.get(func_id)
+    if cached is not None and cached[0] is func:
+        return cached[1]
 
     try:
         ctx: EndpointContext = {}
@@ -294,7 +297,7 @@ def _extract_endpoint_context(func: Any) -> EndpointContext:
     except Exception:
         ctx = EndpointContext()
 
-    _endpoint_context_cache[func_id] = ctx
+    _endpoint_context_cache[func_id] = (func, ctx)
     return ctx
 
 

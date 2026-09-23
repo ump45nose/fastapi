@@ -166,3 +166,41 @@ def test_validation_error_with_no_context():
     assert "1 validation error:" in error_str
     assert "Endpoint" not in error_str
     assert 'File "' not in error_str
+
+
+def test_endpoint_context_cache_returns_context_for_the_same_function():
+    from fastapi.routing import _extract_endpoint_context
+
+    def endpoint():
+        pass
+
+    first = _extract_endpoint_context(endpoint)
+    second = _extract_endpoint_context(endpoint)
+    assert first == second
+    assert first.get("function") == "endpoint"
+
+
+def test_endpoint_context_cache_does_not_trust_recycled_ids():
+    """https://github.com/fastapi/fastapi/issues/16390
+
+    The cache is keyed by ``id(func)``. When CPython recycles the address of a
+    collected function for a new one, a cache that trusts the bare ``id()``
+    hands back the old endpoint's context. Simulate that recycling by re-keying
+    a warm entry onto another function's id.
+    """
+    from fastapi.routing import _endpoint_context_cache, _extract_endpoint_context
+
+    def endpoint_alpha():
+        pass
+
+    def endpoint_beta():
+        pass
+
+    assert _extract_endpoint_context(endpoint_alpha).get("function") == "endpoint_alpha"
+    # Simulate CPython reusing endpoint_alpha's address for endpoint_beta.
+    _endpoint_context_cache[id(endpoint_beta)] = _endpoint_context_cache[
+        id(endpoint_alpha)
+    ]
+
+    context = _extract_endpoint_context(endpoint_beta)
+    assert context.get("function") == "endpoint_beta"
